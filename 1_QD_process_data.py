@@ -211,7 +211,7 @@ def flag_types(df, t):
     df[("num_" +  t)] = df[("is_" +  t)].astype("int").groupby(df["id"]).transform("max")
     return df
 
-types_to_var = ["referral", "assessment_start"]
+types_to_var = ["referral", "assessment_start", "cpp_start", "lac_start"]
 
 for t in types_to_var: 
     print(t)
@@ -221,6 +221,15 @@ for t in types_to_var:
 df = df[df["num_referral"] >= 1]
 create_journeys(df, output_wide_journeys_referrals) # <- this is purely exploration
 
+
+#Natalie exploration
+#test_case_status = df[df["case status"].notnull()]
+
+#test_case_status =test_case_status.rename(columns = {"case status":"cs"})
+
+#test_case_status.groupby('id').test_case_status["case status"].nunique()
+
+#test_case_status["num_case"] = test_case_status.groupby("id").apply(mode)
 
 # drop things before the first referral 
 df = df[df["cum_referral"] >= 1]
@@ -283,7 +292,7 @@ def clean_up_NFAs(dta):
    
     return dta
 
-dta_nfas_sorted = df.groupby("ref_id").apply(limit_file).sort_values(by=['id', 'date']).reset_index(drop=True)
+df = df.groupby("ref_id").apply(clean_up_NFAs).sort_values(by=['id', 'date']).reset_index(drop=True)
 
 
 def flag_last_status(dta): 
@@ -296,15 +305,63 @@ def flag_last_status(dta):
         # make sure there is at least some outcome
         if len(fo_index[0]) > 0:
             # extract index of last tow 
-            last_in = fo_index[-1]
+            last_in = fo_index[0][-1]
             dta.loc[dta.index[-1], "last_status"] = 1 
 
         return dta
     
-dta_ls_flag = dta_nfas_sorted.groupby('ref_id').apply(flag_last_status).reset_index(drop=True)
+df = df.groupby('ref_id').apply(flag_last_status).reset_index(drop=True)
    
 # look closer at data  
 check = dta_ls_flag[["id", "ref_id", "date", "type", "event_ord", "last_status", "case status"]].sort_values(by = ['id', 'date'])
+
+
+################################################
+# SET UP LOGIC FOR SKIPPING CIN PLAdta.loc[dta.index[-1], "last_status"]NS 
+################################################
+
+days_real_cin = 90
+# variable for is cin or is lac 
+df['is_cpp_lac'] = ((df["is_cpp_start"] == 1) | (df['is_lac_start'] == 1)).astype("int")
+
+spare = df
+#df = spare
+def drop_fake_cin(dta):
+    # create cumulative flag
+
+    dta = dta.sort_values(by = ["id", "date"])
+    #extract indices of eligible outcomes 
+    cl = np.where((dta["type"] == "cpp_start") | (dta["type"] == "lac_start")) 
+    #cl = np.where(dta["type"] in ["cpp_start", "lac_start"]) why doesn't this work? 
+    dta["check"] = 500
+    if len(cl[0]) > 0:
+            # extract first place
+            cli = cl[0][0]
+            #extract index of cin plan start
+            cini = np.where(dta["type"] == "cin_start")[0][0]
+            
+            print(cli)
+            print(cini)
+            # store the number of days between the two 
+            num_days = (dta.loc[dta.index[cli], "date"] - dta.loc[dta.index[cini], "date"]).days
+            dta["check"] =  num_days
+            if num_days < 90 :
+                # drop first cin start row 
+                dta = dta.drop(dta.index[cini])
+                # drop cin end 
+                ce = np.where(dta["type"] == "cin_end")
+                if len(ce[0]) > 0:
+                    d = ce[0][0]
+                    dta = dta.drop(dta.index[d])
+            
+    return dta
+
+ 
+df = df.groupby('ref_id').apply(drop_fake_cin).reset_index(drop=True)
+
+check = df[["id", "ref_id", "date", "type", "event_ord", "last_status", "case status", "check"]].sort_values(by = ['id', 'date'])
+
+
 
 
 
