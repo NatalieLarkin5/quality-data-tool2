@@ -207,18 +207,18 @@ tt = df[['id','date', 'type','event_ord']]
 def flag_types(df, t):
     df = df.sort_values(by = ["id", "date", "event_ord"])
     df[("is_" +  t)] = (df["type"] == t)
-    df[("cum_" +  t)] = df[("is_" +  t)].astype("int").groupby(df["id"]).transform("cumsum")
-    df[("num_" +  t)] = df[("is_" +  t)].astype("int").groupby(df["id"]).transform("max")
+    df[("id_cum_" +  t)] = df[("is_" +  t)].astype("int").groupby(df["id"]).transform("cumsum")
+    df[("id_num_" +  t)] = df[("is_" +  t)].astype("int").groupby(df["id"]).transform("max")
     return df
 
-types_to_var = ["referral", "assessment_start", "cpp_start", "lac_start"]
+types_to_var = ["referral", "assessment_start", "cpp_start", "lac_start", "assessment_authorised", "cin_start"]
 
 for t in types_to_var: 
     print(t)
     df = flag_types(df, t)
 
 # limit to those who have a referral
-df = df[df["num_referral"] >= 1]
+df = df[df["id_num_referral"] >= 1]
 create_journeys(df, output_wide_journeys_referrals) # <- this is purely exploration
 
 
@@ -232,12 +232,12 @@ create_journeys(df, output_wide_journeys_referrals) # <- this is purely explorat
 #test_case_status["num_case"] = test_case_status.groupby("id").apply(mode)
 
 # drop things before the first referral 
-df = df[df["cum_referral"] >= 1]
+df = df[df["id_cum_referral"] >= 1]
 
 #create new ID for each child-referral sequence 
-df["ref_id"] = df["id"].astype("str") +  "_" +  df["cum_referral"].astype("str")
+df["ref_id"] = df["id"].astype("str") +  "_" +  df["id_cum_referral"].astype("str")
 
-df = df[df["type"] != "assessment_authorised"]
+#df = df[df["type"] != "assessment_authorised"]
 
 
 # CREATE A FUNCTION TO LIMIT DATA 
@@ -285,7 +285,7 @@ def clean_up_NFAs(dta):
             
             # create a new row for referral nfa 
             ass_nfa_row = dta.iloc[[fa_i]]
-            ass_nfa_row["type"] = "asseessment_nfa"
+            ass_nfa_row["type"] = "assessment_nfa"
             # change the date to be one day after the assessment (need to check it is always earlier than the contact)
             ass_nfa_row["date"] = ass_nfa_row["date"] + datetime.timedelta(days=1) 
             return dta.append(ass_nfa_row)
@@ -295,34 +295,14 @@ def clean_up_NFAs(dta):
 df = df.groupby("ref_id").apply(clean_up_NFAs).sort_values(by=['id', 'date']).reset_index(drop=True)
 
 
-def flag_last_status(dta): 
-        excl = "assessment_start"
-    
-        dta["last_status"] = 0
-        dta = dta.sort_values(by = ["id", "date"])
-        #extract indices of eligible outcomes 
-        fo_index = np.where(dta["type"] != excl)
-        # make sure there is at least some outcome
-        if len(fo_index[0]) > 0:
-            # extract index of last tow 
-            last_in = fo_index[0][-1]
-            dta.loc[dta.index[-1], "last_status"] = 1 
-
-        return dta
-    
-df = df.groupby('ref_id').apply(flag_last_status).reset_index(drop=True)
-   
-# look closer at data  
-check = dta_ls_flag[["id", "ref_id", "date", "type", "event_ord", "last_status", "case status"]].sort_values(by = ['id', 'date'])
-
-
 ################################################
-# SET UP LOGIC FOR SKIPPING CIN PLAdta.loc[dta.index[-1], "last_status"]NS 
+# SET UP LOGIC FOR SKIPPING CIN PLAN
 ################################################
 
 days_real_cin = 90
 # variable for is cin or is lac 
 df['is_cpp_lac'] = ((df["is_cpp_start"] == 1) | (df['is_lac_start'] == 1)).astype("int")
+df['is_cin_cpp_lac'] = ((df["is_cpp_start"] == 1) | (df['is_lac_start'] == 1) | (df['is_cin_start'] == 1)).astype("int")
 
 spare = df
 #df = spare
@@ -339,9 +319,7 @@ def drop_fake_cin(dta):
             cli = cl[0][0]
             #extract index of cin plan start
             cini = np.where(dta["type"] == "cin_start")[0][0]
-            
-            print(cli)
-            print(cini)
+
             # store the number of days between the two 
             num_days = (dta.loc[dta.index[cli], "date"] - dta.loc[dta.index[cini], "date"]).days
             dta["check"] =  num_days
@@ -359,10 +337,50 @@ def drop_fake_cin(dta):
  
 df = df.groupby('ref_id').apply(drop_fake_cin).reset_index(drop=True)
 
-check = df[["id", "ref_id", "date", "type", "event_ord", "last_status", "case status", "check"]].sort_values(by = ['id', 'date'])
+# LATEST STATUS 
+def flag_last_status(dta): 
+        excl = "assessment_start"
+    
+        dta["last_status"] = 0
+        dta = dta.sort_values(by = ["id", "date"])
+        #extract indices of eligible outcomes 
+        fo_index = np.where(dta["type"] != excl)
+        # make sure there is at least some outcome
+        if len(fo_index[0]) > 0:
+            # extract index of last tow 
+            last_in = fo_index[0][-1]
+            dta.loc[dta.index[last_in], "last_status"] = 1 
+
+        return dta
+    
+df = df.groupby('ref_id').apply(flag_last_status).reset_index(drop=True)
+
+
+# FIRST STATUS 
+def flag_first_status(dta): 
+        
+        ffs = ["cpp_start", "lac_start", "cin_start", "assessment_nfa"]
+    
+        dta["first_status"] = 0
+        dta = dta.sort_values(by = ["id", "date"])
+        #extract indices of eligible outcomes 
+        ffs_ind =  np.isin(dta["type"], ffs)
+        p2 = np.where(ffs_ind == True)
+        print(len(p2[0]))
+        # make sure there is at least some outcome
+        if len(p2[0]) > 0:
+            #extract index of last tow 
+            ind = p2[0][0]
+            dta.loc[dta.index[ind], "first_status"] = 1 
+
+        return dta
+
+df = df.groupby('ref_id').apply(flag_first_status).reset_index(drop=True)
 
 
 
+# look closer at data  
+check = df[["id", "ref_id", "date", "type", "event_ord", "last_status", "first_status", "case status", "check"]].sort_values(by = ['id', 'date'])
 
 
 #####################################
@@ -371,7 +389,7 @@ check = df[["id", "ref_id", "date", "type", "event_ord", "last_status", "case st
 def reshape_to_journey_steps(data, filtering_vars = ["gender", "ethnicity"]): 
     
     # add suffix for the last status to differentiate when collapsing 
-    data["type"] = np.where(data["last_status"] == 1, ("latest_status_" + data["type"]), data["type"])
+    data["type"] = np.where(data["last_status"] == 1, ("last_status_" + data["type"]), data["type"])
 
     # limit variables 
     basic_vars = ["id", "type", "date"]
@@ -399,7 +417,8 @@ def reshape_to_journey_steps(data, filtering_vars = ["gender", "ethnicity"]):
     #rename type to source 
     return data
 
-test2 = reshape_to_journey_steps(test1)
+test2 = reshape_to_journey_steps(df)
+
 output= test2
 
 #output data for SANKEY
