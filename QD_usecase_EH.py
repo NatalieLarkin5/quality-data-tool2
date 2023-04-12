@@ -1,15 +1,12 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Jan 10 08:28:20 2023
-
-@author: natalie.larkin
-"""
 
 # load packages 
 import jupyter
 import pandas as pd
 import os
 import plotly.express as px
+import plotly.graph_objects as go 
+from ipywidgets import widgets
+from ipywidgets import interact
 import numpy as np
 import datetime
 
@@ -69,28 +66,27 @@ data["EH_before_CIN"] = 0
 data.loc[data.EH_start < data.CIN_start, "EH_before_CIN"] = 1
 
 
-gr_dt = data[["id", "EH_before_CIN", "need_type", "gender", "ethnicity"]]
-
-
-################################################
-################################################
-# VISUALISATIONS 
-################################################
-################################################
+gd = data[["id", "EH_before_CIN", "need_type", "gender", "ethnicity"]]
 
 
 
-def graph(data, group, xvar):
+@interact
+def read_values(
+    xvar=widgets.Dropdown(options=["need_type", "gender", "ethnicity"],
+                               value='need_type',
+                               description='Child Descriptor')):
+
     
-        dt = data.groupby([data[group], data[xvar]], as_index = False).size()
-        dt['group_size'] = dt.groupby(dt[group])["size"].transform(np.sum)
-        dt["perc"] = round((dt["size"]/dt["group_size"])*100, 1)
-        fig = px.bar(dt, x = xvar, color = group, y = "perc", title = "test")
-        fig.show()
-
-        return dt
- 
-
-tst = graph(gr_dt, "EH_before_CIN", "need_type")
-
-tst.show()
+    dt = data.groupby([data["EH_before_CIN"], data[xvar]], as_index = False).size()
+    dt['group_size'] = dt.groupby(dt["EH_before_CIN"])["size"].transform(np.sum)
+    dt["perc"] = round((dt["size"]/dt["group_size"])*100, 1)
+    dt["EH_before_CIN"] = dt["EH_before_CIN"].astype(str)
+    
+    fig = px.bar(dt, 
+                 x = xvar, 
+                 color = "EH_before_CIN", 
+                 y = "perc", 
+                 barmode = "group", 
+                 title = "test")
+    
+    go.FigureWidget(fig.to_dict()).show()
