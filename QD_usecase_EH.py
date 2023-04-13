@@ -72,9 +72,10 @@ gd = data[["id", "EH_before_CIN", "need_type", "gender", "ethnicity"]]
 
 @interact
 def read_values(
-    xvar=widgets.Dropdown(options=["need_type", "gender", "ethnicity"],
+    xvar=widgets.Dropdown(options=[("Primary need","need_type"), ("Gender", "gender"), ("Ethnicity", "ethnicity")],
                                value='need_type',
-                               description='Child Descriptor')):
+                               description='Child characteristic',
+                          style= {'description_width': 'initial'})):
 
     
     dt = data.groupby([data["EH_before_CIN"], data[xvar]], as_index = False).size()
@@ -87,6 +88,8 @@ def read_values(
                  color = "EH_before_CIN", 
                  y = "perc", 
                  barmode = "group", 
-                 title = "test")
+                 title = "Child characteristics by whether or not<br>they received Early Help before children's services")
     
+    fig.update_layout(yaxis_title = "Percentage of children", 
+                      xaxis_title = xvar)
     go.FigureWidget(fig.to_dict()).show()
