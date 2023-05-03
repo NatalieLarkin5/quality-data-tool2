@@ -22,6 +22,14 @@ input_file = "sankey_input.xlsx"
 
 # load data 
 df = pd.read_excel(os.path.join(input_loc, input_file)) 
+labs = pd.read_excel(os.path.join(input_loc, "sankey_labels.xlsx")) 
+df = df.merge(labs, left_on = "target", right_on = "name")
+df = df.rename(columns = {'lab':'target_lab'})
+df = df.merge(labs, left_on = "source", right_on = "name")
+df = df.rename(columns = {'lab':'source_lab'})
+df = df.drop(columns = ["name_x", "target", "source", "name_y"])
+df = df.rename(columns = {'target_lab':'target','source_lab':'source'})
+# load labels 
 
 # store columns as array
 source_string = df["source"].values.tolist()
@@ -36,6 +44,7 @@ options_to_merge.reset_index(inplace=True)
 options_to_merge = options_to_merge.rename(columns = {'index':'sankey_index'})
 labels = options_to_merge["options"].values.tolist()
 
+
 # first merge the index values for source
 df_ind = df.merge(options_to_merge, left_on = "source", right_on = "options")
 # rename and drop so we can re-merge
@@ -48,7 +57,7 @@ df_ind = df_ind.rename(columns = {"sankey_index":"target_index"})
 #turn columns into arrays so we can create a dictionary for the Sankey input
 source = df_ind["source_index"].values.tolist()
 target = df_ind["target_index"].values.tolist()
-value  = df_ind["id"].values.tolist()
+value  = df_ind["ref_id"].values.tolist()
 
 link = dict(source = source, target = target, value = value)
 node = dict(label = labels, pad = 15, thickness = 5)

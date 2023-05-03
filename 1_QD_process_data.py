@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+5# -*- coding: utf-8 -*-
 """
 Created on Tue Jan 10 08:28:20 2023
 
@@ -359,7 +359,7 @@ df = df.groupby('ref_id').apply(flag_last_status).reset_index(drop=True)
 # FIRST STATUS 
 def flag_first_status(dta): 
         
-        ffs = ["cpp_start", "lac_start", "cin_start", "assessment_nfa"]
+        ffs = ["cpp_start", "lac_start", "cin_start", "assessment_nfa", "early_help_assessment_start"]
     
         dta["first_status"] = 0
         dta = dta.sort_values(by = ["id", "date"])
@@ -380,47 +380,56 @@ df = df.groupby('ref_id').apply(flag_first_status).reset_index(drop=True)
 
 
 # look closer at data  
-check = df[["id", "ref_id", "date", "type", "event_ord", "last_status", "first_status", "case status", "check"]].sort_values(by = ['id', 'date'])
+check = df[["id", "ref_id", "date", "type", "event_ord", "last_status", "first_status", "case status", "check", "ethnicity", "gender"]].sort_values(by = ['id', 'date'])
 
+# LIMIT OBSERVATIONS 
+df_lim = check[(df["type"] == "referral") | (df["last_status"] == 1) | (df["first_status"] == 1)]
 
+#NEED TO REPLICATE LAST ROW IF IT IS THE SAME FOR BOTH 
+def dup_last_row(dta):
+
+    if (dta.iloc[-1]["last_status"] == 1) & (dta.iloc[-1]["first_status"] == 1): 
+        last_row = dta.iloc[[-1]]
+        return dta.append(last_row)
+    return dta 
+    
+df_lim = df_lim.groupby('ref_id').apply(dup_last_row).reset_index(drop=True)
+ 
 #####################################
 # STEP 2 - RESHAPING - this code is actually okay except do we want to duplicate the row if first status = final status
 #######################################
-def reshape_to_journey_steps(data, filtering_vars = ["gender", "ethnicity"]): 
-    
-    # add suffix for the last status to differentiate when collapsing 
-    data["type"] = np.where(data["last_status"] == 1, ("last_status_" + data["type"]), data["type"])
-
+ 
+def journey_fy(data, filtering_vars = ["gender", "ethnicity"]): 
+    val = "last_status_" + data.iloc[-1]["type"]
+ 
+    data.loc[data.index[-1], "type"] = val
     # limit variables 
-    basic_vars = ["id", "type", "date"]
+    basic_vars = ["ref_id", "type", "date"]
     keep_vars = basic_vars + filtering_vars # need to fix this so it can be empty
     data = data[keep_vars]
     
     # create a new variable that has the next type of event chronologically. I.e., the end point of the journey
     # sort
-    data = data.sort_values(by = ["id", "date"])
-    data["target"] = data["type"].groupby(data["id"]).shift(-1)
+    data = data.sort_values(by = ["date"])
+    data["target"] = data["type"].shift(-1)
     
     # rename type to source 
     data = data.rename(columns = {"type":"source"})
     
     # drop last row within a group because it holds no new information 
-    data = data.drop(data.groupby(['id']).tail(1).index, axis=0)
-    
-    #limit to source and target 
-    # NEED TO ADD FILTERING VARIABLES 
-    data = data[["source", "target", "id"]]
-    
-    # collapse data frame 
-    data = data.groupby(['target', 'source']).count().reset_index()
-    
+    data.drop(index=data.index[-1], 
+           axis=0, 
+           inplace=True)
+
     #rename type to source 
     return data
 
-test2 = reshape_to_journey_steps(df)
+journey = df_lim.groupby('ref_id').apply(journey_fy).reset_index(drop=True)
+journey = journey[["target", "source", "ref_id"]]
 
-output= test2
+# collapse data frame 
+df_coll = journey.groupby(['target', 'source']).count().reset_index()
 
 #output data for SANKEY
 # Save to Excel
-output.to_excel(os.path.join(out_loc, "sankey_input.xlsx"), index = False)
+df_coll.to_excel(os.path.join(out_loc, "sankey_input.xlsx"), index = False)
