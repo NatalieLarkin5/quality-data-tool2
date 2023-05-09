@@ -50,21 +50,7 @@ journey_events = {'contact': {'Contacts':'date of Contact'},
           'lac_end': {'Children in Care': 'date Ceased to be Looked After'}}
 
 
-# Abbreviations for events (for the "journeys reduced")
-events_map = {'contact': 'C',
-        'referral': 'R',
-        'early_help_assessment_start': 'EH',
-        'early_help_assessment_end': 'EH|',
-        'assessment_start': 'AS',
-        'assessment_authorised': 'AA',
-        's47': 'S47',
-        'icpc': 'ICPC',
-        'cin_start': 'CIN',
-        'cin_end': 'CIN|',
-        "cpp_start": 'CPP',
-        "cpp_end": 'CPP|',
-        "lac_start": 'LAC',
-        "lac_end": 'LAC|'}
+
 
 
 # Functions
@@ -133,46 +119,6 @@ def build_annexarecord(input_file, events=journey_events):
     return annexarecord
 
 ########################################################################################
-
-def joined_string(series):
-    """
-    Turns all elements from a series into a string, joining elements with "->"
-    """
-    list_elements = series.tolist()
-    return " -> ".join(list_elements)
-
-#######################################################################################
-def create_journeys(df, output_file):
-    df = df[~df["date"].isnull()]
-    df = df[~df["type"].isnull()]
-    df = df.sort_values(['date', 'type'])
-    
-    # Add new column showing each event in format [00-00-0000/event]
-    df["TimeEvent"] = "[" + df.date.astype(str) + "/" + df.type.astype(str) + "]"
-    
-    # Add new column showing each event in reduced form e.g. "C" for contact
-    df["reduced"] = df.type.map(events_map)
-    
-    # Create both long and reduced journeys
-    grouped = df.groupby("id")
-    journey_long = grouped['TimeEvent'].apply(joined_string)
-    journey_reduced = grouped['reduced'].apply(joined_string)
-    
-    # Create new dataframe with both long and reduced journeys
-    journeys_df = pd.DataFrame({'Child journey': journey_long, 'Child journey reduced': journey_reduced}, index=journey_long.index)
-    
-    # Save to Excel
-    writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
-    # Journeys
-    journeys_df.to_excel(writer, sheet_name='Child journeys')
-    # Events abbreviation
-    pd.DataFrame({'Event': list(events_map.keys()), 'Reduced': list(events_map.values())}).to_excel(writer, sheet_name='Legend', index=None)
-    writer.save()
-    
-    return print('Child journeys are done! Have a look in {}'.format(output_file))
-
-
-########################################################################################
 ########################################################################################
 all_data = build_annexarecord(input_file)
 
@@ -194,7 +140,8 @@ df = all_data
 # create a variable we can use to sort when the date is all the same 
 event_order = ["contact", "referral", "assessment_start", "assessment_authorised", "cin_start"]
 n = 1 
-df["event_ord"] =100
+# set to 100 for everthing else 
+df["event_ord"] = 100
 
 for t in event_order:
     df.loc[df["type"] == t, "event_ord"] = n
@@ -219,17 +166,6 @@ for t in types_to_var:
 
 # limit to those who have a referral
 df = df[df["id_num_referral"] >= 1]
-create_journeys(df, output_wide_journeys_referrals) # <- this is purely exploration
-
-
-#Natalie exploration
-#test_case_status = df[df["case status"].notnull()]
-
-#test_case_status =test_case_status.rename(columns = {"case status":"cs"})
-
-#test_case_status.groupby('id').test_case_status["case status"].nunique()
-
-#test_case_status["num_case"] = test_case_status.groupby("id").apply(mode)
 
 # drop things before the first referral 
 df = df[df["id_cum_referral"] >= 1]
@@ -239,7 +175,10 @@ df["ref_id"] = df["id"].astype("str") +  "_" +  df["id_cum_referral"].astype("st
 
 #df = df[df["type"] != "assessment_authorised"]
 
+#assert df["referral nfa?"] in ["yes", "no"]
 
+
+ 
 # CREATE A FUNCTION TO LIMIT DATA 
 def clean_up_NFAs(dta):
 
@@ -247,8 +186,9 @@ def clean_up_NFAs(dta):
     dta = dta.sort_values(by = ["ref_id", "date", "event_ord"])
     # REFERRAL NFAS 
     # we know referrals are going to be the first obs within each referral id
-    if dta.iloc[0]["referral nfa?"] == "yes": 
+    if dta.iloc[0]["referral nfa?"] == "Yes": 
         # if the last event is a contact, save thelast row and the referral 
+        print("referral NFA")
         if dta.iloc[-1]["type"] == "contact":
             dta_first = dta.iloc[[0]]
             dta_last  = dta.iloc[[-1]]
@@ -294,7 +234,6 @@ def clean_up_NFAs(dta):
 
 df = df.groupby("ref_id").apply(clean_up_NFAs).sort_values(by=['id', 'date']).reset_index(drop=True)
 
-
 ################################################
 # SET UP LOGIC FOR SKIPPING CIN PLAN
 ################################################
@@ -304,8 +243,7 @@ days_real_cin = 90
 df['is_cpp_lac'] = ((df["is_cpp_start"] == 1) | (df['is_lac_start'] == 1)).astype("int")
 df['is_cin_cpp_lac'] = ((df["is_cpp_start"] == 1) | (df['is_lac_start'] == 1) | (df['is_cin_start'] == 1)).astype("int")
 
-spare = df
-#df = spare
+
 def drop_fake_cin(dta):
     # create cumulative flag
 
@@ -359,7 +297,7 @@ df = df.groupby('ref_id').apply(flag_last_status).reset_index(drop=True)
 # FIRST STATUS 
 def flag_first_status(dta): 
         
-        ffs = ["cpp_start", "lac_start", "cin_start", "assessment_nfa", "early_help_assessment_start"]
+        ffs = ["cpp_start", "lac_start", "cin_start", "assessment_nfa", "referral_nfa", "early_help_assessment_start"]
     
         dta["first_status"] = 0
         dta = dta.sort_values(by = ["id", "date"])
@@ -433,3 +371,8 @@ df_coll = journey.groupby(['target', 'source']).count().reset_index()
 #output data for SANKEY
 # Save to Excel
 df_coll.to_excel(os.path.join(out_loc, "sankey_input.xlsx"), index = False)
+
+
+#NOTES 
+# EARLY HELP IS NOT CURRENTLY IN THIS 
+
