@@ -59,6 +59,7 @@ source = df_ind["source_index"].values.tolist()
 target = df_ind["target_index"].values.tolist()
 value  = df_ind["ref_id"].values.tolist()
 
+
 link = dict(source = source, target = target, value = value)
 node = dict(label = labels, pad = 15, thickness = 5)
 data = go.Sankey(link = link, node = node)
