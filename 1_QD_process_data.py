@@ -215,7 +215,7 @@ print(last_date)
 df["time_diff"] = last_date - df["ref_date"]
 df["time_diff"] = df["time_diff"].dt.days
 # limit to those who have at least 45 days following referral
-check = df[df["time_diff"] >= 45]
+df = df[df["time_diff"] >= 45]
 
 # only leave people 
 
