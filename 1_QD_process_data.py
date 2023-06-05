@@ -12,6 +12,8 @@ import os
 import plotly 
 import numpy as np
 import datetime
+from dateutil.relativedelta import relativedelta
+
 
 # set working directory 
 root = "C:/Users/natalie.larkin/OneDrive - Social Finance Ltd/Desktop/Quality Data - Tool 2"
@@ -130,6 +132,7 @@ first_event = all_data.sort_values("date").groupby('child unique id').first()
 # tabulate the first type of event 
 
 
+
 ##############################################################
 ############################################################## 
 # renaming for simplicity
@@ -173,12 +176,49 @@ df = df[df["id_cum_referral"] >= 1]
 #create new ID for each child-referral sequence 
 df["ref_id"] = df["id"].astype("str") +  "_" +  df["id_cum_referral"].astype("str")
 
-#df = df[df["type"] != "assessment_authorised"]
-
-#assert df["referral nfa?"] in ["yes", "no"]
 
 
  
+
+##############################
+# SUBSET BASED ON WIDGET 
+##############################
+
+#going to spread by referral ID 
+
+referral_vars = ["ethnicity", "date of birth", "gender", "number of referrals in last 12 months", "referral source"]
+core_vars = ["ref_id", "date"] + referral_vars
+ref_dta = df[df["type"] == "referral"]
+ref_dta = ref_dta[core_vars]
+
+ref_dta =ref_dta.rename(columns = {"number of referrals in last 12 months":"num_ref", 
+                                   "date of birth" : "dob", 
+                                   "referral source" : "ref_source", 
+                                   "date" : "ref_date"})
+
+#MERGE FILTERING VARIABLES BACK ON 
+df = df.drop(referral_vars, axis=1) 
+df = df.merge(ref_dta, left_on = "ref_id", right_on = "ref_id", validate ="many_to_one")
+
+
+# FILTERING VARIABLES 
+#df = df[df["num_ref"] == "1"] 
+df = df[df["gender"] == "b) Female"] 
+#df = df[df["ethnicity"] == "a) WBRI"] 
+#df = df[df["ref_source"] == "q) 6: Police"] 
+
+################################
+# LIMIT THE SAMPLE TO THOSE WITH 45 DAYS BETWEEN REFERRAL AND FINAL DATE IN DATA SET 
+################################
+last_date = df["date"].max()
+print(last_date)
+df["time_diff"] = last_date - df["ref_date"]
+df["time_diff"] = df["time_diff"].dt.days
+# limit to those who have at least 45 days following referral
+check = df[df["time_diff"] >= 45]
+
+# only leave people 
+
 # CREATE A FUNCTION TO LIMIT DATA 
 def clean_up_NFAs(dta):
 
@@ -237,8 +277,8 @@ df = df.groupby("ref_id").apply(clean_up_NFAs).sort_values(by=['id', 'date']).re
 ################################################
 # SET UP LOGIC FOR SKIPPING CIN PLAN
 ################################################
-
-days_real_cin = 90
+# below is the number of days of lag time after cin start date and CPP/LAC before we consider it a different plan step 
+days_real_cin = 70 
 # variable for is cin or is lac 
 df['is_cpp_lac'] = ((df["is_cpp_start"] == 1) | (df['is_lac_start'] == 1)).astype("int")
 df['is_cin_cpp_lac'] = ((df["is_cpp_start"] == 1) | (df['is_lac_start'] == 1) | (df['is_cin_start'] == 1)).astype("int")
@@ -261,7 +301,7 @@ def drop_fake_cin(dta):
             # store the number of days between the two 
             num_days = (dta.loc[dta.index[cli], "date"] - dta.loc[dta.index[cini], "date"]).days
             dta["check"] =  num_days
-            if num_days < 90 :
+            if num_days < days_real_cin :
                 # drop first cin start row 
                 dta = dta.drop(dta.index[cini])
                 # drop cin end 
@@ -285,7 +325,7 @@ def flag_last_status(dta):
         fo_index = np.where(dta["type"] != excl)
         # make sure there is at least some outcome
         if len(fo_index[0]) > 0:
-            # extract index of last tow 
+            # extract index of last row 
             last_in = fo_index[0][-1]
             dta.loc[dta.index[last_in], "last_status"] = 1 
 
@@ -314,7 +354,6 @@ def flag_first_status(dta):
         return dta
 
 df = df.groupby('ref_id').apply(flag_first_status).reset_index(drop=True)
-
 
 
 # look closer at data  
@@ -373,6 +412,7 @@ df_coll = journey.groupby(['target', 'source']).count().reset_index()
 df_coll.to_excel(os.path.join(out_loc, "sankey_input.xlsx"), index = False)
 
 
-#NOTES 
-# EARLY HELP IS NOT CURRENTLY IN THIS 
+#NOTES THESE ARE PLACES THAT ARE RELATIVELY HARD CODED
+#if "CS Close Case" in dta.iloc[fa_i]["was the child assessed as requiring la children’s social care support?"]: # -> make this more generic
+#     if dta.iloc[0]["referral nfa?"] == "Yes": 
 
